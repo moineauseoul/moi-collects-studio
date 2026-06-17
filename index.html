@@ -1219,6 +1219,14 @@ function delS(id) {
 ═════════════════════════════════════════ */
 let cy = new Date().getFullYear(), cm = new Date().getMonth();
 
+const CAT_COLORS = {
+  '리빙': {bg:'#dde8f0', cl:'#4a7a9b'},
+  '패션': {bg:'#f0e6ed', cl:'#9b4a7a'},
+  '그릇': {bg:'#f0ece0', cl:'#8a7040'},
+  '믹스': {bg:'#eaf1e6', cl:'#7a9968'},
+};
+function catColor(cat) { return CAT_COLORS[cat] || {bg:'var(--border)', cl:'var(--text)'}; }
+
 function renderCal() {
   document.getElementById('cal-lbl').textContent = `${cy}년 ${cm + 1}월`;
   const evs = ld(K.c);
@@ -1241,8 +1249,8 @@ function renderCal() {
     const dk = kCards.filter(c => c.uploadDate === ds);
     html += `<div class="cal-day${other?' dim':''}${today?' today':''}">
       <div class="dn">${d}</div>
-      ${de.map(e => `<div class="cal-ev s-${e.stat}" onclick="showCE('${e.id}')">${esc(e.title)}</div>`).join('')}
-      ${dk.map(c => `<div class="cal-ev s-완료" onclick="showKC('${c.id}')" style="opacity:.85">✅ ${esc(c.title)}</div>`).join('')}
+      ${de.map(e => { const cc=catColor(e.cat); return `<div class="cal-ev" style="background:${cc.bg};color:${cc.cl};${e.stat==='완료'?'opacity:.75;text-decoration:line-through':''}" onclick="showCE('${e.id}')">${esc(e.title)}</div>`; }).join('')}
+      ${dk.map(c => { const cc=catColor(c.cat); return `<div class="cal-ev" style="background:${cc.bg};color:${cc.cl};opacity:.85" onclick="showKC('${c.id}')">✅ ${esc(c.title)}</div>`; }).join('')}
       <button class="add-ev" onclick="openCModal('${ds}')">+</button>
     </div>`;
   }
