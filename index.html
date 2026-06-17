@@ -68,7 +68,7 @@ main{max-width:1400px;margin:0 auto;padding:32px}
 .ib:hover{border-color:var(--accent);color:var(--accent)}
 
 /* ── TAGS ────────────────────────────────── */
-.tag{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;letter-spacing:.02em}
+.tag{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;letter-spacing:.02em;background:var(--border);color:var(--text)}
 .리빙{background:#dde8f0;color:#4a7a9b}
 .패션{background:#f0e6ed;color:#9b4a7a}
 .그릇{background:#f0ece0;color:#8a7040}
@@ -102,6 +102,8 @@ main{max-width:1400px;margin:0 auto;padding:32px}
 .kcard-meta{margin-top:10px}
 .kcard-acts{position:absolute;top:10px;right:10px;display:flex;gap:3px;opacity:0;transition:opacity .15s}
 .kcard:hover .kcard-acts{opacity:1}
+.kcard.drop-before{border-top:2px solid var(--accent)!important}
+.kcard.drop-after{border-bottom:2px solid var(--accent)!important}
 
 /* ══════════════════════════════════════════
    SOURCES
@@ -401,7 +403,15 @@ a.ch-pill:hover{border-color:var(--accent-dk);background:var(--accent-pl);color:
   <section id="kanban" class="sec on">
     <div class="sec-hdr">
       <h1 class="sec-title">콘텐츠 기획 보드</h1>
-      <button class="btn btn-p" onclick="openKModal()">+ 새 카드</button>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:6px">
+          <button class="btn btn-o btn-sm" onclick="chKMonth(-1)">←</button>
+          <span id="k-month-lbl" style="font-size:13px;font-weight:700;min-width:90px;text-align:center"></span>
+          <button class="btn btn-o btn-sm" onclick="chKMonth(1)">→</button>
+          <button id="k-all-btn" class="btn btn-sm" onclick="clearKMonth()">전체</button>
+        </div>
+        <button class="btn btn-p" onclick="openKModal()">+ 새 카드</button>
+      </div>
     </div>
     <div class="kanban">
       <div class="kcol" id="col-아이디어" data-stage="아이디어"
@@ -581,13 +591,29 @@ a.ch-pill:hover{border-color:var(--accent-dk);background:var(--accent-pl);color:
     <div class="modal-title" id="km-title">새 콘텐츠 카드</div>
     <div class="fg"><label class="fl">제목</label><input class="fi" id="k-title" placeholder="콘텐츠 제목"></div>
     <div class="fg"><label class="fl">카테고리</label>
-      <select class="fi" id="k-cat"><option>리빙</option><option>패션</option><option>그릇</option><option>믹스</option></select></div>
+      <select class="fi" id="k-cat-sel" onchange="kCatChange()"></select>
+      <input class="fi" id="k-cat-new" placeholder="카테고리 직접 입력" style="display:none;margin-top:8px">
+      <div style="margin-top:6px;text-align:right">
+        <button type="button" class="btn btn-o btn-sm" onclick="openKCatModal()">카테고리 관리</button>
+      </div></div>
     <div class="fg"><label class="fl">단계</label>
       <select class="fi" id="k-stage"><option>아이디어</option><option>제작중</option><option>완료</option></select></div>
     <div class="fg"><label class="fl">메모</label><textarea class="fi" id="k-memo" placeholder="아이디어, 참고사항..."></textarea></div>
+    <div class="fg"><label class="fl">업로드 예정일</label><input class="fi" id="k-date" type="date"></div>
     <div class="mfooter">
       <button class="btn btn-o" onclick="closeOv('km')">취소</button>
       <button class="btn btn-p" onclick="saveK()">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- CATEGORY MANAGE MODAL -->
+<div class="overlay" id="kcm" style="z-index:600" onclick="closeOv('kcm')">
+  <div class="modal" style="max-width:380px" onclick="event.stopPropagation()">
+    <div class="modal-title">카테고리 관리</div>
+    <div id="kcat-list"></div>
+    <div class="mfooter">
+      <button class="btn btn-p" onclick="closeOv('kcm')">닫기</button>
     </div>
   </div>
 </div>
@@ -833,37 +859,161 @@ document.addEventListener('keydown', e => {
 /* ═════════════════════════════════════════
    KANBAN
 ═════════════════════════════════════════ */
-let dragId = null;
+let dragId = null, kFilterY = new Date().getFullYear(), kFilterM = new Date().getMonth(), kFilterActive = false;
+
+function updateKMonthLabel() {
+  const lbl = document.getElementById('k-month-lbl');
+  if (lbl) lbl.textContent = kFilterActive ? `${kFilterY}년 ${kFilterM+1}월` : '전체 보기';
+  const btn = document.getElementById('k-all-btn');
+  if (btn) btn.className = kFilterActive ? 'btn btn-o btn-sm' : 'btn btn-p btn-sm';
+}
+
+function chKMonth(dir) {
+  kFilterActive = true;
+  kFilterM += dir;
+  if (kFilterM > 11) { kFilterM = 0; kFilterY++; }
+  if (kFilterM < 0) { kFilterM = 11; kFilterY--; }
+  updateKMonthLabel();
+  renderK();
+}
+
+function clearKMonth() {
+  kFilterActive = false;
+  updateKMonthLabel();
+  renderK();
+}
 
 function renderK() {
+  updateKMonthLabel();
   const cards = ld(K.k);
   ['아이디어','제작중','완료'].forEach(stage => {
-    const sc = cards.filter(c => c.stage === stage);
+    let sc = cards.filter(c => c.stage === stage);
+    if (kFilterActive) {
+      sc = sc.filter(c => {
+        if (!c.uploadDate) return false;
+        const d = new Date(c.uploadDate + 'T00:00:00');
+        return d.getFullYear() === kFilterY && d.getMonth() === kFilterM;
+      });
+    }
     document.getElementById('ct-' + stage).textContent = sc.length;
     const el = document.getElementById('cards-' + stage);
     el.innerHTML = sc.length === 0
       ? '<div class="empty"><div class="empty-ico">○</div><div class="empty-txt">카드 없음</div></div>'
       : sc.map(c => `
         <div class="kcard" draggable="true" id="kc-${c.id}"
-             ondragstart="dStart(event,'${c.id}')" ondragend="dEnd(event)">
+             ondragstart="dStart(event,'${c.id}')" ondragend="dEnd(event)"
+             ondragover="kCardDragOver(event,'${c.id}')"
+             ondragleave="kCardDragLeave(event,'${c.id}')"
+             ondrop="kCardDrop(event,'${c.id}')">
           <div class="kcard-acts">
             <button class="ib" onclick="editK('${c.id}')">✎</button>
             <button class="ib" onclick="delK('${c.id}')">✕</button>
           </div>
           <div class="kcard-title">${esc(c.title)}</div>
           ${c.memo ? `<div class="kcard-memo">${esc(c.memo)}</div>` : ''}
-          <div class="kcard-meta"><span class="tag ${c.cat}">${c.cat}</span></div>
+          <div class="kcard-meta">
+            <span class="tag ${c.cat}">${c.cat}</span>
+            ${c.uploadDate ? `<span style="font-size:11px;color:var(--muted);margin-left:6px">📅 ${c.uploadDate}</span>` : ''}
+          </div>
         </div>`).join('');
   });
 }
 
+const BASE_CATS = ['리빙','패션','그릇','믹스'];
+
+function openKCatModal() {
+  renderKCatList();
+  openOv('kcm');
+}
+
+function renderKCatList() {
+  const cards = ld(K.k);
+  const custom = [...new Set(cards.map(function(c){ return c.cat; }).filter(function(c){ return c && !BASE_CATS.includes(c); }))];
+  const allCats = BASE_CATS.concat(custom);
+  var html = '';
+  allCats.forEach(function(cat) {
+    var cnt = cards.filter(function(c){ return c.cat === cat; }).length;
+    var isBase = BASE_CATS.includes(cat);
+    var safeCat = esc(cat);
+    html += '<div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border)">';
+    html += '<span class="tag ' + safeCat + '" style="flex:1;min-width:0">' + safeCat + '</span>';
+    html += '<span style="font-size:11px;color:var(--muted);white-space:nowrap">' + cnt + '개</span>';
+    if (isBase) {
+      html += '<span style="font-size:11px;color:var(--muted);padding:0 8px">기본</span>';
+    } else {
+      html += '<button class="ib" data-cat="' + safeCat + '" onclick="editKCat(this.dataset.cat)" title="이름 변경">✎</button>';
+      html += '<button class="ib" data-cat="' + safeCat + '" onclick="delKCat(this.dataset.cat)" title="삭제">✕</button>';
+    }
+    html += '</div>';
+  });
+  document.getElementById('kcat-list').innerHTML = html || '<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px">카테고리가 없어요</div>';
+}
+
+function editKCat(cat) {
+  var newName = prompt('"' + cat + '" 이름 변경', cat);
+  if (!newName || newName.trim() === cat) return;
+  var name = newName.trim();
+  var cards = ld(K.k);
+  cards.forEach(function(c){ if (c.cat === cat) c.cat = name; });
+  sv(K.k, cards);
+  renderKCatList();
+  if (document.getElementById('km').classList.contains('on')) { refreshKCatSel(); setKCat(name); }
+  renderK();
+}
+
+function delKCat(cat) {
+  var cards = ld(K.k);
+  var cnt = cards.filter(function(c){ return c.cat === cat; }).length;
+  var msg = cnt
+    ? '"' + cat + '" 카테고리를 삭제할까요?\n이 카테고리를 사용 중인 카드 ' + cnt + '개는 \'리빙\'으로 변경됩니다.'
+    : '"' + cat + '" 카테고리를 삭제할까요?';
+  if (!confirm(msg)) return;
+  cards.forEach(function(c){ if (c.cat === cat) c.cat = '리빙'; });
+  sv(K.k, cards);
+  renderKCatList();
+  if (document.getElementById('km').classList.contains('on')) { refreshKCatSel(); setKCat('리빙'); }
+  renderK();
+}
+
+function refreshKCatSel() {
+  const base = ['리빙','패션','그릇','믹스'];
+  const custom = [...new Set(ld(K.k).map(c => c.cat).filter(c => c && !base.includes(c)))];
+  document.getElementById('k-cat-sel').innerHTML =
+    [...base, ...custom].map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('') +
+    `<option value="__new__">＋ 직접 입력...</option>`;
+}
+
+function kCatChange() {
+  const sel = document.getElementById('k-cat-sel');
+  const inp = document.getElementById('k-cat-new');
+  if (sel.value === '__new__') { inp.style.display = ''; inp.focus(); }
+  else inp.style.display = 'none';
+}
+
+function getKCat() {
+  const sel = document.getElementById('k-cat-sel');
+  if (sel.value === '__new__') return document.getElementById('k-cat-new').value.trim() || '기타';
+  return sel.value;
+}
+
+function setKCat(val) {
+  const sel = document.getElementById('k-cat-sel');
+  const inp = document.getElementById('k-cat-new');
+  const opt = [...sel.options].find(o => o.value === val && o.value !== '__new__');
+  if (opt) { sel.value = val; inp.style.display = 'none'; }
+  else if (val) { sel.value = '__new__'; inp.style.display = ''; inp.value = val; }
+  else { sel.value = sel.options[0]?.value || '리빙'; inp.style.display = 'none'; }
+}
+
 function openKModal(stage) {
   editId.k = null;
+  refreshKCatSel();
   document.getElementById('km-title').textContent = '새 콘텐츠 카드';
   document.getElementById('k-title').value = '';
   document.getElementById('k-memo').value = '';
-  document.getElementById('k-cat').value = '리빙';
+  setKCat('리빙');
   document.getElementById('k-stage').value = stage || '아이디어';
+  const _td = new Date(); document.getElementById('k-date').value = _td.getFullYear() + '-' + String(_td.getMonth()+1).padStart(2,'0') + '-' + String(_td.getDate()).padStart(2,'0');
   openOv('km');
   setTimeout(() => document.getElementById('k-title').focus(), 80);
 }
@@ -872,11 +1022,13 @@ function editK(id) {
   const c = ld(K.k).find(x => x.id === id);
   if (!c) return;
   editId.k = id;
+  refreshKCatSel();
   document.getElementById('km-title').textContent = '카드 수정';
   document.getElementById('k-title').value = c.title;
   document.getElementById('k-memo').value = c.memo || '';
-  document.getElementById('k-cat').value = c.cat;
+  setKCat(c.cat);
   document.getElementById('k-stage').value = c.stage;
+  document.getElementById('k-date').value = c.uploadDate || '';
   openOv('km');
 }
 
@@ -884,7 +1036,7 @@ function saveK() {
   const title = document.getElementById('k-title').value.trim();
   if (!title) { document.getElementById('k-title').focus(); return; }
   const cards = ld(K.k);
-  const data = { title, cat: document.getElementById('k-cat').value, stage: document.getElementById('k-stage').value, memo: document.getElementById('k-memo').value.trim() };
+  const data = { title, cat: getKCat(), stage: document.getElementById('k-stage').value, memo: document.getElementById('k-memo').value.trim(), uploadDate: document.getElementById('k-date').value || '' };
   if (editId.k) {
     const i = cards.findIndex(c => c.id === editId.k);
     if (i > -1) cards[i] = { ...cards[i], ...data };
@@ -911,6 +1063,7 @@ function dStart(e, id) {
 function dEnd() {
   if (dragId) document.getElementById('kc-' + dragId)?.classList.remove('drag');
   document.querySelectorAll('.kcol').forEach(c => c.classList.remove('over'));
+  document.querySelectorAll('.kcard').forEach(c => c.classList.remove('drop-before','drop-after'));
 }
 function dOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
 function dEnter(e) { e.currentTarget.classList.add('over'); }
@@ -923,6 +1076,46 @@ function dDrop(e) {
   const cards = ld(K.k);
   const i = cards.findIndex(c => c.id === dragId);
   if (i > -1) cards[i].stage = col.dataset.stage;
+  sv(K.k, cards);
+  renderK();
+  dragId = null;
+}
+
+function kCardDragOver(e, targetId) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!dragId || dragId === targetId) return;
+  const el = document.getElementById('kc-' + targetId);
+  if (!el) return;
+  const rect = el.getBoundingClientRect();
+  const before = e.clientY < rect.top + rect.height / 2;
+  el.classList.toggle('drop-before', before);
+  el.classList.toggle('drop-after', !before);
+}
+
+function kCardDragLeave(e, targetId) {
+  const el = document.getElementById('kc-' + targetId);
+  if (el && !el.contains(e.relatedTarget)) el.classList.remove('drop-before','drop-after');
+}
+
+function kCardDrop(e, targetId) {
+  e.preventDefault();
+  e.stopPropagation();
+  const el = document.getElementById('kc-' + targetId);
+  if (el) el.classList.remove('drop-before','drop-after');
+  if (!dragId || dragId === targetId) return;
+  const cards = ld(K.k);
+  const dragIndex = cards.findIndex(c => c.id === dragId);
+  if (dragIndex === -1) return;
+  const targetIndex = cards.findIndex(c => c.id === targetId);
+  if (targetIndex === -1) return;
+  const targetEl = document.getElementById('kc-' + targetId);
+  const rect = targetEl?.getBoundingClientRect();
+  const insertBefore = rect ? e.clientY < rect.top + rect.height / 2 : false;
+  const [dragCard] = cards.splice(dragIndex, 1);
+  const newTargetIndex = cards.findIndex(c => c.id === targetId);
+  dragCard.stage = cards[newTargetIndex].stage;
+  cards.splice(insertBefore ? newTargetIndex : newTargetIndex + 1, 0, dragCard);
   sv(K.k, cards);
   renderK();
   dragId = null;
@@ -1029,6 +1222,7 @@ let cy = new Date().getFullYear(), cm = new Date().getMonth();
 function renderCal() {
   document.getElementById('cal-lbl').textContent = `${cy}년 ${cm + 1}월`;
   const evs = ld(K.c);
+  const kCards = ld(K.k).filter(c => c.stage === '완료' && c.uploadDate);
   const fd = new Date(cy, cm, 1).getDay();
   const dim = new Date(cy, cm + 1, 0).getDate();
   const dip = new Date(cy, cm, 0).getDate();
@@ -1044,9 +1238,11 @@ function renderCal() {
     const ds = `${yr}-${String(mo+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const today = d === now.getDate() && mo === now.getMonth() && yr === now.getFullYear();
     const de = evs.filter(e => e.date === ds);
+    const dk = kCards.filter(c => c.uploadDate === ds);
     html += `<div class="cal-day${other?' dim':''}${today?' today':''}">
       <div class="dn">${d}</div>
       ${de.map(e => `<div class="cal-ev s-${e.stat}" onclick="showCE('${e.id}')">${esc(e.title)}</div>`).join('')}
+      ${dk.map(c => `<div class="cal-ev s-완료" onclick="showKC('${c.id}')" style="opacity:.85">✅ ${esc(c.title)}</div>`).join('')}
       <button class="add-ev" onclick="openCModal('${ds}')">+</button>
     </div>`;
   }
@@ -1092,6 +1288,8 @@ function saveC() {
 function showCE(id) {
   const e = ld(K.c).find(x => x.id === id);
   if (!e) return;
+  document.getElementById('cd-del').style.display = '';
+  document.getElementById('cd-edit').style.display = '';
   document.getElementById('cd-title').textContent = e.title;
   document.getElementById('cd-body').innerHTML = `
     <div style="display:flex;flex-direction:column;gap:14px">
@@ -1133,6 +1331,27 @@ function delCE(id) {
   sv(K.c, ld(K.c).filter(e => e.id !== id));
   closeOv('cd');
   renderCal();
+}
+
+function showKC(id) {
+  const c = ld(K.k).find(x => x.id === id);
+  if (!c) return;
+  document.getElementById('cd-del').style.display = 'none';
+  document.getElementById('cd-edit').style.display = 'none';
+  document.getElementById('cd-title').textContent = c.title;
+  document.getElementById('cd-body').innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="tag ${c.cat}">${c.cat}</span>
+        <span style="font-size:12px;color:var(--muted)">업로드 예정일: ${c.uploadDate}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="cal-ev s-완료" style="display:inline-block">✅ 완료</span>
+        <span style="font-size:12px;color:var(--muted)">(콘텐츠 기획 보드에서 수정)</span>
+      </div>
+      ${c.memo ? `<div><div class="copy-lbl">메모</div><div style="font-size:13px;line-height:1.65">${esc(c.memo)}</div></div>` : ''}
+    </div>`;
+  openOv('cd');
 }
 
 /* ═════════════════════════════════════════
